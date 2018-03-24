@@ -15,14 +15,17 @@
  */
 package com.github.chrishantha.jfr.flamegraph.output;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.Writer;
+import com.beust.jcommander.Parameter;
+import com.jrockit.mc.common.IMCFrame;
+import com.jrockit.mc.common.IMCMethod;
+import com.jrockit.mc.flightrecorder.FlightRecording;
+import com.jrockit.mc.flightrecorder.FlightRecordingLoader;
+import com.jrockit.mc.flightrecorder.internal.model.FLRStackTrace;
+import com.jrockit.mc.flightrecorder.spi.IEvent;
+import com.jrockit.mc.flightrecorder.spi.ITimeRange;
+import com.jrockit.mc.flightrecorder.spi.IView;
+
+import java.io.*;
 import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,18 +35,6 @@ import java.time.format.FormatStyle;
 import java.util.Stack;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
-
-import com.beust.jcommander.Parameter;
-import com.jrockit.mc.common.IMCFrame;
-import com.jrockit.mc.common.IMCMethod;
-import com.jrockit.mc.flightrecorder.FlightRecording;
-import com.jrockit.mc.flightrecorder.FlightRecordingLoader;
-import com.jrockit.mc.flightrecorder.internal.model.FLRStackTrace;
-import com.jrockit.mc.flightrecorder.spi.IEvent;
-import com.jrockit.mc.flightrecorder.spi.IEventFilter;
-import com.jrockit.mc.flightrecorder.spi.IEventType;
-import com.jrockit.mc.flightrecorder.spi.ITimeRange;
-import com.jrockit.mc.flightrecorder.spi.IView;
 
 /**
  * Parse JFR dump and create a compatible output for Flame Graph
@@ -134,38 +125,28 @@ public final class JFRToFlameGraphWriter {
         FlameGraphOutputWriter flameGraphOutputWriter = outputType.createFlameGraphOutputWriter();
         flameGraphOutputWriter.initialize(parameters);
 
-        
-        view.setFilter(new IEventFilter() {
-            @Override
-            public boolean accept(IEvent event) {
-                return eventType.getName().equals(event.getEventType().getName());
-            }
-        });
+        view.setFilter(event -> eventType.getPath().equals(event.getEventType().getName()));
 
         for (IEvent event : view) {
-            // Filter for the specified event type, defaults to method profiling
-            // if not specified.
-            String name = event.getEventType().getName();
-            if (eventType.getName().equals(name)) {
-                long eventStartTimestamp = event.getStartTimestamp();
-                long eventEndTimestamp = event.getEndTimestamp();
-                if (filter && !filter(eventStartTimestamp, eventEndTimestamp)) {
-                    continue;
-                }
 
-                // Get Stack Trace from the event. Field ID was identified from
-                // event.getEventType().getFieldIdentifiers()
-                FLRStackTrace flrStackTrace = (FLRStackTrace) event.getValue(EVENT_VALUE_STACK);
-                if (flrStackTrace != null) {
-                    Stack<String> stack = getStack(event);
-                    Long value = 1L;
-                    if (eventType.isAllocation()) {
-                        value = (Long) event.getValue(EVENT_ALLOCATION_SIZE);
-                    }
-                    flameGraphOutputWriter.processEvent(eventStartTimestamp, eventEndTimestamp, event.getDuration(),
-                            stack, value);
+            long eventStartTimestamp = event.getStartTimestamp();
+            long eventEndTimestamp = event.getEndTimestamp();
+            if (filter && !filter(eventStartTimestamp, eventEndTimestamp)) {
+                continue;
+            }
 
+            // Get Stack Trace from the event. Field ID was identified from
+            // event.getEventType().getFieldIdentifiers()
+            FLRStackTrace flrStackTrace = (FLRStackTrace) event.getValue(EVENT_VALUE_STACK);
+            if (flrStackTrace != null) {
+                Stack<String> stack = getStack(event);
+                Long value = 1L;
+                if (eventType.isAllocation()) {
+                    value = (Long) event.getValue(EVENT_ALLOCATION_SIZE);
                 }
+                flameGraphOutputWriter.processEvent(eventStartTimestamp, eventEndTimestamp, event.getDuration(),
+                        stack, value);
+
             }
         }
 
@@ -195,24 +176,24 @@ public final class JFRToFlameGraphWriter {
         long minutes = d.minusHours(hours).toMinutes();
 
         IView view = recording.createView();
+        view.setFilter(event -> eventType.getPath().equals(event.getEventType().getName()));
 
         long minEventStartTimestamp = Long.MAX_VALUE;
         long maxEventEndTimestamp = 0;
 
         for (IEvent event : view) {
-            if (eventType.getName().equals(event.getEventType().getName())) {
-                long eventStartTimestamp = event.getStartTimestamp();
-                long eventEndTimestamp = event.getEndTimestamp();
-                if (eventStartTimestamp < minEventStartTimestamp) {
-                    // Setting min event start
-                    minEventStartTimestamp = eventStartTimestamp;
-                }
-
-                if (eventEndTimestamp > maxEventEndTimestamp) {
-                    // Setting max event end
-                    maxEventEndTimestamp = eventEndTimestamp;
-                }
+            long eventStartTimestamp = event.getStartTimestamp();
+            long eventEndTimestamp = event.getEndTimestamp();
+            if (eventStartTimestamp < minEventStartTimestamp) {
+                // Setting min event start
+                minEventStartTimestamp = eventStartTimestamp;
             }
+
+            if (eventEndTimestamp > maxEventEndTimestamp) {
+                // Setting max event end
+                maxEventEndTimestamp = eventEndTimestamp;
+            }
+
         }
 
         Duration eventsDuration = Duration.ofNanos(maxEventEndTimestamp - minEventStartTimestamp);

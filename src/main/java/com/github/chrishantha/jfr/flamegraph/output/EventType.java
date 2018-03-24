@@ -7,33 +7,39 @@ import com.beust.jcommander.IStringConverter;
  */
 public enum EventType {
 
-    EVENT_METHOD_PROFILING_SAMPLE("Method Profiling Sample", "cpu"),
-    EVENT_ALLOCATION_IN_NEW_TLAB("Allocation in new TLAB", "allocation-tlab", true), 
-    EVENT_ALLOCATION_OUTSIDE_TLAB("Allocation outside TLAB", "allocation-outside-tlab", true), 
-    EVENT_JAVA_EXCEPTION("Java Exception", "exceptions"),
-    EVENT_JAVA_MONITOR_BLOCKED("Java Monitor Blocked", "monitor-blocked");
+    EVENT_METHOD_PROFILING_SAMPLE("vm/prof/execution_sample", "cpu"),
+    EVENT_ALLOCATION_IN_NEW_TLAB("java/object_alloc_in_new_TLAB", "allocation-tlab", true),
+    EVENT_ALLOCATION_OUTSIDE_TLAB("java/object_alloc_outside_TLAB", "allocation-outside-tlab", true),
+    EVENT_JAVA_EXCEPTION("java/statistics/throwables", "exceptions"),
+    EVENT_JAVA_MONITOR_BLOCKED("java/monitor_wait", "monitor-blocked");
 
-    /** Name as declared in the JFR recording */
-    private final String name;
+    /**
+     * Path as declared in .jfc files
+     */
+    private final String path;
 
-    /** Id used as a command line option */
+    /**
+     * Id used as a command line option
+     */
     private final String id;
 
-    /** True if the event is allocation-related */
+    /**
+     * True if the event is allocation-related
+     */
     private final boolean isAllocation;
 
-    EventType(String name, String id, boolean isAllocation) {
-        this.name = name;
+    EventType(String path, String id, boolean isAllocation) {
+        this.path = path;
         this.id = id;
         this.isAllocation = isAllocation;
     }
 
-    EventType(String name, String id) {
-        this(name, id, false);
+    EventType(String path, String id) {
+        this(path, id, false);
     }
 
-    public String getName() {
-        return name;
+    public String getPath() {
+        return path;
     }
 
     @Override
@@ -48,21 +54,13 @@ public enum EventType {
         return isAllocation;
     }
 
-    public static EventType from(String name) {
-        switch (name) {
-        case "allocation-tlab":
-            return EVENT_ALLOCATION_IN_NEW_TLAB;
-        case "allocation-outside-tlab":
-            return EVENT_ALLOCATION_OUTSIDE_TLAB;
-        case "exceptions":
-            return EVENT_JAVA_EXCEPTION;
-        case "monitor-blocked":
-            return EVENT_JAVA_MONITOR_BLOCKED;
-        case "cpu":
-            return EVENT_METHOD_PROFILING_SAMPLE;
-        default:
-            throw new IllegalArgumentException("Event type [" + name + "] does not exist.");
+    public static EventType from(String path) {
+        for (EventType eventType : values()) {
+            if (eventType.id.equals(path)) {
+                return eventType;
+            }
         }
+        throw new IllegalArgumentException("Event type [" + path + "] does not exist.");
     }
 
     public static final class EventTypeConverter implements IStringConverter<EventType> {
